@@ -236,14 +236,29 @@ load("api.js", { fetch: makeFakeFetch({
       id: "pr-1",
       datetime: "2024-05-01 09:00",
       title: "Acme reports record Q1 earnings",
-      body: '<p>See full release <a href="https://example.com/pr/1">here</a>.</p>',
+      // Realistic shape: a mailto: appears first, then an inline Yahoo link,
+      // then the canonical PRNURL "View original content" link at the end.
+      body: '<p>Contact <a href="mailto:editor@example.com">editor</a>.</p>' +
+        '<p>See <a href="https://finance.yahoo.com/quote/ACME">ACME</a> on Yahoo.</p>' +
+        '<p id="PURL">View original content:<a id="PRNURL" rel="nofollow" href="https://www.prnewswire.com/news-releases/acme-q1-123.html" target="_blank">https://www.prnewswire.com/news-releases/acme-q1-123.html</a></p>',
       language: "en",
     },
     {
       id: "pr-2",
       datetime: "2024-04-15 13:30",
       title: "Acme announces dividend",
-      body: "<p>No link in this one.</p>",
+      // No PRNURL; first usable http link should be picked (mailto skipped).
+      body: '<p>Email <a href="mailto:info@example.com">info</a>.</p>' +
+        '<p>Read more at <a href="https://example.com/dividend">example.com</a>.</p>',
+      language: "en",
+    },
+    {
+      id: "pr-3",
+      datetime: "2024-04-01 08:00",
+      title: "Acme image-only release",
+      // Only a mailto and an image page link -> no usable article URL.
+      body: '<p><a href="mailto:press@example.com">press</a></p>' +
+        '<p><a href="https://mma.prnewswire.com/media/123/image1.jpg">image</a></p>',
       language: "en",
     },
   ],
@@ -251,31 +266,44 @@ load("api.js", { fetch: makeFakeFetch({
 
 const Api = globalObj.VINApi;
 
-// extractFirstHref: pure function, no fetch needed.
-assert("extractFirstHref: finds first link",
-  Api.extractFirstHref('<a href="https://a.example/x">a</a> and <a href="https://b.example/y">b</a>') === "https://a.example/x");
-assert("extractFirstHref: no link -> null",
-  Api.extractFirstHref("<p>no links here</p>") === null);
-assert("extractFirstHref: empty/null -> null",
-  Api.extractFirstHref("") === null && Api.extractFirstHref(null) === null);
-assert("extractFirstHref: single quotes",
-  Api.extractFirstHref("<a href='https://c.example/z'>c</a>") === null,
-  "regex only matches double-quoted href");
+// extractArticleUrl: pure function, no fetch needed.
+// Prefers the PRNURL canonical link over earlier hrefs.
+assert("extractArticleUrl: prefers PRNURL over earlier links",
+  Api.extractArticleUrl('<a href="mailto:editor@example.com">editor</a><a href="https://finance.yahoo.com/quote/ACME">ACME</a><a id="PRNURL" href="https://www.prnewswire.com/x.html">original</a>') === "https://www.prnewswire.com/x.html");
+// Falls back to first usable http(s) href when no PRNURL present.
+assert("extractArticleUrl: falls back to first http link",
+  Api.extractArticleUrl('<a href="mailto:a@b.com">a</a><a href="https://example.com/article">article</a>') === "https://example.com/article");
+// Skips mailto: and image/asset URLs when no usable link exists.
+assert("extractArticleUrl: skips mailto and image -> null",
+  Api.extractArticleUrl('<a href="mailto:a@b.com">a</a><a href="https://mma.prnewswire.com/media/1/img.jpg">img</a>') === null);
+assert("extractArticleUrl: no link -> null",
+  Api.extractArticleUrl("<p>no links here</p>") === null);
+assert("extractArticleUrl: empty/null -> null",
+  Api.extractArticleUrl("") === null && Api.extractArticleUrl(null) === null);
+// PRNURL with attributes in any order (id before href, rel/target around).
+assert("extractArticleUrl: PRNURL attrs in any order",
+  Api.extractArticleUrl('<a rel="nofollow" id="PRNURL" href="https://www.prnewswire.com/y.html" target="_blank">y</a>') === "https://www.prnewswire.com/y.html");
 
 // fetchPressReleases: maps the API response into the normalized shape and
-// extracts the first href from each body. These assertions run after the
-// promise chain resolves (the RateLimiter uses real Promises, so resolution
-// happens on the microtask queue, not synchronously).
+// extracts the canonical article URL from each body. These assertions run
+// after the promise chain resolves (the RateLimiter uses real Promises, so
+// resolution happens on the microtask queue, not synchronously).
 Api.fetchPressReleases("ACME", "demo-key", null, 10).then(function (items) {
   assert("fetchPressReleases: returns array", Array.isArray(items));
-  assert("fetchPressReleases: length 2", items.length === 2, "len=" + items.length);
+  assert("fetchPressReleases: length 3", items.length === 3, "len=" + items.length);
   assert("fetchPressReleases: id preserved", items[0].id === "pr-1");
   assert("fetchPressReleases: title preserved", items[0].title === "Acme reports record Q1 earnings");
   assert("fetchPressReleases: datetime preserved", items[0].datetime === "2024-05-01 09:00");
-  assert("fetchPressReleases: url extracted from body", items[0].url === "https://example.com/pr/1");
-  assert("fetchPressReleases: url null when no href", items[1].url === null);
+  assert("fetchPressReleases: url = PRNURL canonical link",
+    items[0].url === "https://www.prnewswire.com/news-releases/acme-q1-123.html",
+    "url=" + items[0].url);
+  assert("fetchPressReleases: url falls back to first http link",
+    items[1].url === "https://example.com/dividend",
+    "url=" + items[1].url);
+  assert("fetchPressReleases: url null when only mailto/image",
+    items[2].url === null, "url=" + items[2].url);
   assert("fetchPressReleases: body preserved",
-    typeof items[0].body === "string" && items[0].body.indexOf("href") !== -1);
+    typeof items[0].body === "string" && items[0].body.indexOf("PRNURL") !== -1);
 }).catch(function (e) {
   assert("fetchPressReleases: no throw", false, e && e.message);
 });

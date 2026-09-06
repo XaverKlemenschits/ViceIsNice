@@ -139,7 +139,8 @@
   // Fetch press releases for a symbol via Twelve Data's /press_releases endpoint.
   // Docs: https://twelvedata.com/docs#press-releases (Basic plan, 1 credit/request).
   // Returns an array of { id, datetime, title, body, language, url } where `url`
-  // is the first href extracted from the HTML `body`, or null if none is found.
+  // is the canonical article link extracted from the HTML `body` (preferring the
+  // PRNewswire "View original content" link), or null if none is found.
   // `exchange` (optional) disambiguates international listings, matching the
   // convention used by fetchTimeSeries. `outputsize` defaults to 10 (the API
   // max per page). Throws on API error.
@@ -162,21 +163,53 @@
         title: it.title,
         body: it.body,
         language: it.language,
-        url: extractFirstHref(it.body),
+        url: extractArticleUrl(it.body),
       }));
     });
   }
 
-  // Extract the first href value from an HTML string. Returns null if none.
-  // Used to pull a source link out of the press-release `body` field.
-  function extractFirstHref(html) {
+  // Extract the canonical article URL from a press-release HTML body.
+  //
+  // The `body` field is syndicated via PRNewswire/Cision and typically contains
+  // many <a href="..."> links: inline references to other articles, Yahoo
+  // Finance quote pages, image assets, disclaimer/terms links, and mailto:
+  // contact addresses. The first href is therefore often NOT the article
+  // itself (it can even be a mailto: link).
+  //
+  // Strategy, in priority order:
+  //   1. The <a id="PRNURL" ... href="..."> link — PRNewswire's canonical
+  //      "View original content" link at the end of every release.
+  //   2. The first http(s) href that is not a mailto:/tel: link and does not
+  //      point at an image/asset URL (mma.prnewswire.com image pages, tracking
+  //      pixels). This is a best-effort fallback for bodies without a PRNURL.
+  //   3. null if no suitable link is found.
+  function extractArticleUrl(html) {
     if (!html || typeof html !== "string") return null;
-    const m = html.match(/href\s*=\s*"([^"]+)"/i);
-    return m ? m[1] : null;
+
+    // 1. Prefer the PRNewswire canonical link.
+    const prn = html.match(/<a\b[^>]*\bid\s*=\s*"PRNURL"[^>]*\bhref\s*=\s*"([^"]+)"/i);
+    if (prn) return prn[1];
+
+    // 2. Fall back to the first usable http(s) href. Scan all hrefs and pick
+    //    the first that is http(s), not mailto:/tel:, and not an image/asset
+    //    URL (mma.prnewswire.com/media/... image pages, tracking gifs).
+    const hrefRe = /href\s*=\s*"([^"]+)"/gi;
+    let m;
+    while ((m = hrefRe.exec(html)) !== null) {
+      const href = m[1];
+      if (!href) continue;
+      if (!/^https?:\/\//i.test(href)) continue;          // skip mailto:, tel:, //
+      if (/mma\.prnewswire\.com\/media\//i.test(href)) continue; // image pages
+      if (/\/rt\.gif/i.test(href)) continue;              // tracking pixels
+      return href;
+    }
+
+    // 3. Nothing usable.
+    return null;
   }
 
   global.VINApi = {
     BASE, DEFAULT_RPM, setRpm,
-    testApiKey, fetchTimeSeries, fetchPressReleases, extractFirstHref,
+    testApiKey, fetchTimeSeries, fetchPressReleases, extractArticleUrl,
   };
 })(window);
