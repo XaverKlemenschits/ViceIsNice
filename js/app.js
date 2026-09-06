@@ -219,7 +219,7 @@
     // Fetch time series for each, sequentially via the rate limiter.
     let done = 0;
     const fetches = metas.map((meta) => {
-      return A.fetchTimeSeries(meta.symbol, 252, state.apiKey)
+      return A.fetchTimeSeries(meta.symbol, 252, state.apiKey, meta.exchange)
         .then((bars) => {
           done++;
           $("opt-progress").textContent = "Fetching " + done + "/15 (" + meta.symbol + ")";

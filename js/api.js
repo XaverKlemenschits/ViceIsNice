@@ -95,8 +95,10 @@
   // Fetch daily time series for a symbol.
   // Returns an array of bars oldest-first: [{datetime, open, high, low, close, volume}, ...]
   // Numeric fields are coerced to Numbers; null/invalid bars are dropped.
-  // Throws on API error or insufficient data.
-  function fetchTimeSeries(symbol, outputsize, apiKey) {
+  // `exchange` (optional) disambiguates international listings (e.g. "LSE",
+  // "Euronext", "OTC"); null/undefined omits the parameter. Throws on API
+  // error or insufficient data.
+  function fetchTimeSeries(symbol, outputsize, apiKey, exchange) {
     outputsize = outputsize || 250;
     if (!apiKey) return Promise.reject(new Error("No API key provided."));
     return getJson("/time_series", {
@@ -104,6 +106,7 @@
       interval: "1day",
       outputsize: outputsize,
       apikey: apiKey,
+      exchange: exchange,
     }).then((data) => {
       if (!data || data.status === "error") {
         throw new Error((data && data.message) || "time_series error");

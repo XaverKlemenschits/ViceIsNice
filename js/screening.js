@@ -78,7 +78,7 @@
     const results = [];
 
     const tasks = universe.map((meta) => {
-      return API.fetchTimeSeries(meta.symbol, 250, apiKey)
+      return API.fetchTimeSeries(meta.symbol, 250, apiKey, meta.exchange)
         .then((bars) => screenStock(meta, bars))
         .catch((err) => {
           const r = screenStock(meta, []); // insufficient data path
