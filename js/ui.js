@@ -156,6 +156,37 @@
     }
   }
 
+  // Render the weights table from saved data only (no mu/Sigma available).
+  // Keeps the same 5-column layout; the return/vol contribution columns show
+  // "—" since they can't be recomputed without the covariance matrix.
+  function renderWeightsTableSimple(weights, metas) {
+    const body = document.getElementById("weights-body");
+    body.innerHTML = "";
+    const n = weights.length;
+    for (let i = 0; i < n; i++) {
+      const w = weights[i];
+      if (w < 1e-6) continue;
+      const tr = document.createElement("tr");
+      const meta = metas[i] || { symbol: "?", name: "" };
+      const cells = [
+        meta.symbol,
+        meta.name,
+        fmt.pctRaw(w * 100, 2),
+        "—",
+        "—",
+      ];
+      for (const c of cells) {
+        const td = document.createElement("td");
+        td.textContent = c;
+        tr.appendChild(td);
+      }
+      body.appendChild(tr);
+    }
+    if (body.children.length === 0) {
+      body.innerHTML = '<tr class="empty-row"><td colspan="5">No weights to display.</td></tr>';
+    }
+  }
+
   function renderStats(stats) {
     document.getElementById("stat-return").textContent = fmt.pctRaw(stats.ret * 100, 2);
     document.getElementById("stat-vol").textContent = fmt.pctRaw(stats.vol * 100, 2);
@@ -253,6 +284,6 @@
   global.VINUI = {
     fmt, escapeHtml,
     renderScreenTable, renderSavedPortfolio, updateSelectCount,
-    renderWeightsTable, renderStats, drawFrontier,
+    renderWeightsTable, renderWeightsTableSimple, renderStats, drawFrontier,
   };
 })(window);

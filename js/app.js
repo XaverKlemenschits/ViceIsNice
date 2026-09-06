@@ -189,11 +189,34 @@
     hint.hidden = true;
     controls.style.opacity = "1";
     $("optimize-btn").disabled = false;
-    // Show stale cached results if any.
+
+    // If a fresh optimization was run this session, renderOptResults already
+    // showed it; don't clobber it with the saved-data view.
+    if (state.optData) return;
+
+    // Otherwise, render the saved weights (if any) so the user sees real data
+    // instead of just a text hint.
     const cached = S.getOptimization();
     if (cached && cached.weights && cached.stats) {
-      // We can't fully re-render without mu/Sigma, but we can show a note.
-      $("opt-progress").textContent = "Showing last saved weights from " + new Date(cached.ts).toLocaleString() + ". Click “Fetch data & optimize” to refresh.";
+      const bySymbol = {};
+      for (const s of U.UNIVERSE) bySymbol[s.symbol] = s;
+      const metas = (cached.symbols || []).map((sym) =>
+        bySymbol[sym] || { symbol: sym, name: "", sector: "" }
+      );
+      $("opt-results").hidden = false;
+      UI.renderWeightsTableSimple(cached.weights, metas);
+      UI.renderStats(cached.stats);
+      // No mu/Sigma to redraw the frontier; clear the canvas.
+      const canvas = $("frontier-canvas");
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#9aa0ab";
+      ctx.font = "13px sans-serif";
+      ctx.fillText("Efficient frontier unavailable for saved weights.", 60, canvas.height / 2);
+      ctx.fillText("Click “Fetch data & optimize” to recompute.", 60, canvas.height / 2 + 20);
+      $("opt-progress").textContent = "Showing saved weights from " +
+        new Date(cached.ts).toLocaleString() +
+        ". Click “Fetch data & optimize” to refresh.";
     }
   }
 
