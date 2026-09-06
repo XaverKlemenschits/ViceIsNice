@@ -7,7 +7,7 @@
 
   const BASE = "https://openrouter.ai/api/v1";
   // A small, cheap default model. The user can override via the model input.
-  const DEFAULT_MODEL = "openai/gpt-4o-mini";
+  const DEFAULT_MODEL = "minimax/minimax-m3:free";
 
   // Send a chat-completion request. Returns the assistant's text content.
   // Throws on HTTP error or unexpected response shape.
