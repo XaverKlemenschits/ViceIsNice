@@ -132,7 +132,6 @@
     // Precompute per-asset marginal vol contribution (sqrt(diag(Sigma)) * w).
     for (let i = 0; i < n; i++) {
       const w = weights[i];
-      if (w < 1e-6) continue; // skip near-zero weights for brevity
       const tr = document.createElement("tr");
       const meta = metas[i] || { symbol: "?", name: "" };
       const retContrib = w * mu[i];
@@ -165,7 +164,6 @@
     const n = weights.length;
     for (let i = 0; i < n; i++) {
       const w = weights[i];
-      if (w < 1e-6) continue;
       const tr = document.createElement("tr");
       const meta = metas[i] || { symbol: "?", name: "" };
       const cells = [
