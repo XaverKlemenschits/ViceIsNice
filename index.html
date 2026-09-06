@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vice Is Nice — Investment SPA</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="app-header">
+    <h1>Vice Is Nice <span class="subtitle">Investment SPA</span></h1>
+  </header>
+
+  <!-- Shared settings bar -->
+  <section id="settings-bar" class="settings-bar">
+    <div class="settings-row">
+      <label for="api-key-input" class="settings-label">Twelve Data API key</label>
+      <input id="api-key-input" type="password" autocomplete="off" placeholder="Paste your API key" />
+      <button id="api-key-save" type="button">Save</button>
+      <button id="api-key-test" type="button">Test</button>
+      <span id="api-status" class="api-status" role="status" aria-live="polite"></span>
+    </div>
+    <p class="settings-hint">
+      Get a free key at <a href="https://twelvedata.com/" target="_blank" rel="noopener">twelvedata.com</a>.
+      The key is stored only in your browser (localStorage).
+    </p>
+  </section>
+
+  <!-- Tabs -->
+  <nav class="tabs" role="tablist">
+    <button id="tab-construction-btn" class="tab active" role="tab" aria-selected="true" aria-controls="tab-construction">Portfolio Construction</button>
+    <button id="tab-optimization-btn" class="tab" role="tab" aria-selected="false" aria-controls="tab-optimization">Optimization</button>
+  </nav>
+
+  <main>
+    <!-- Tab 1: Portfolio Construction -->
+    <section id="tab-construction" class="tab-panel active" role="tabpanel">
+      <div class="panel-header">
+        <h2>Portfolio Construction</h2>
+        <p class="panel-desc">
+          Screen the hard-coded universe (defence, tobacco, alcohol, gambling, oil, agrifood/petrochemical)
+          against four technical criteria, then pick exactly 15 stocks.
+        </p>
+      </div>
+
+      <div class="action-row">
+        <button id="screen-btn" type="button" class="primary">Screen universe</button>
+        <span id="screen-progress" class="progress" aria-live="polite"></span>
+      </div>
+
+      <div id="saved-portfolio-box" class="saved-box" hidden>
+        <h3>Saved portfolio (<span id="saved-count">0</span>/15)</h3>
+        <ul id="saved-portfolio-list" class="saved-list"></ul>
+      </div>
+
+      <div class="table-wrap">
+        <table id="screen-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>Symbol</th>
+              <th>Name</th>
+              <th>Sector</th>
+              <th>RSI(14)</th>
+              <th>50d MA</th>
+              <th>200d MA</th>
+              <th>30d Vol %</th>
+              <th>30d Avg Vol</th>
+              <th>Criteria</th>
+              <th>Eligible</th>
+            </tr>
+          </thead>
+          <tbody id="screen-body">
+            <tr class="empty-row"><td colspan="11">Click “Screen universe” to fetch data.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="action-row">
+        <span id="select-count" class="select-count">0/15 selected</span>
+        <button id="save-portfolio-btn" type="button" class="primary" disabled>Save portfolio</button>
+      </div>
+    </section>
+
+    <!-- Tab 2: Optimization -->
+    <section id="tab-optimization" class="tab-panel" role="tabpanel" hidden>
+      <div class="panel-header">
+        <h2>Portfolio Optimization</h2>
+        <p class="panel-desc">
+          Fetch daily prices for the 15 saved stocks, compute the Markowitz minimum-variance portfolio,
+          and explore the efficient frontier.
+        </p>
+      </div>
+
+      <div id="opt-disabled-hint" class="hint" hidden></div>
+
+      <div id="opt-controls" class="opt-controls">
+        <div class="action-row">
+          <button id="optimize-btn" type="button" class="primary">Fetch data &amp; optimize</button>
+          <span id="opt-progress" class="progress" aria-live="polite"></span>
+        </div>
+
+        <div class="opt-inputs">
+          <div class="opt-field">
+            <label for="target-return-slider">Target annual return: <span id="target-return-value">—</span></label>
+            <input id="target-return-slider" type="range" min="0" max="100" value="50" disabled />
+            <small>Drag to impose a target. Default = minimum-variance portfolio.</small>
+          </div>
+          <div class="opt-field">
+            <label for="risk-free-input">Risk-free rate (annual, %)</label>
+            <input id="risk-free-input" type="number" step="0.01" value="0" />
+          </div>
+          <div class="opt-field">
+            <button id="recompute-btn" type="button" disabled>Recompute at target</button>
+            <button id="save-weights-btn" type="button" disabled>Save weights</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="opt-results" class="opt-results" hidden>
+        <div class="stats-grid">
+          <div class="stat"><span class="stat-label">Expected return</span><span id="stat-return" class="stat-value">—</span></div>
+          <div class="stat"><span class="stat-label">Volatility</span><span id="stat-vol" class="stat-value">—</span></div>
+          <div class="stat"><span class="stat-label">Sharpe ratio</span><span id="stat-sharpe" class="stat-value">—</span></div>
+        </div>
+
+        <div class="opt-layout">
+          <div class="table-wrap">
+            <table id="weights-table">
+              <thead>
+                <tr><th>Symbol</th><th>Name</th><th>Weight %</th><th>Return contrib</th><th>Vol contrib</th></tr>
+              </thead>
+              <tbody id="weights-body"></tbody>
+            </table>
+          </div>
+          <div class="chart-wrap">
+            <h3>Efficient frontier</h3>
+            <canvas id="frontier-canvas" width="520" height="360"></canvas>
+            <p class="chart-caption">Dots: frontier points. Star: current portfolio.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <p>Vice Is Nice — vanilla JS SPA. All computations run in your browser. Data: Twelve Data API.</p>
+  </footer>
+
+  <!-- Scripts (order matters: no modules, plain global scripts) -->
+  <script src="js/storage.js"></script>
+  <script src="js/universe.js"></script>
+  <script src="js/indicators.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/screening.js"></script>
+  <script src="js/markowitz.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
