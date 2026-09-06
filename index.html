@@ -38,6 +38,7 @@
     <button id="tab-construction-btn" class="tab active" role="tab" aria-selected="true" aria-controls="tab-construction">Portfolio Construction</button>
     <button id="tab-optimization-btn" class="tab" role="tab" aria-selected="false" aria-controls="tab-optimization">Optimization</button>
     <button id="tab-summary-btn" class="tab" role="tab" aria-selected="false" aria-controls="tab-summary">Executive Summary</button>
+    <button id="tab-news-btn" class="tab" role="tab" aria-selected="false" aria-controls="tab-news">Trading Signals</button>
   </nav>
 
   <main>
@@ -177,6 +178,43 @@
         <h3>Executive Summary</h3>
         <div id="summary-content" class="summary-content"></div>
         <p id="summary-meta" class="summary-meta"></p>
+      </div>
+    </section>
+
+    <!-- Tab 4: Trading Signals -->
+    <section id="tab-news" class="tab-panel" role="tabpanel" hidden>
+      <div class="panel-header">
+        <h2>Trading Signals</h2>
+        <p class="panel-desc">
+          Fetch recent press releases for each ticker in the saved portfolio via
+          Twelve Data, then optionally summarize the news with an LLM via OpenRouter.
+        </p>
+      </div>
+
+      <div id="news-disabled-hint" class="hint" hidden></div>
+
+      <div class="action-row">
+        <button id="news-btn" type="button" class="primary">Fetch press releases</button>
+        <button id="news-summarize-btn" type="button" disabled>Summarize news</button>
+        <span id="news-progress" class="progress" aria-live="polite"></span>
+      </div>
+
+      <div class="opt-inputs">
+        <div class="opt-field">
+          <label for="news-model-input">OpenRouter model</label>
+          <input id="news-model-input" type="text" placeholder="minimax/minimax-m3:free" />
+          <small>Optional. Defaults to minimax/minimax-m3:free. Used for the news summary.</small>
+        </div>
+      </div>
+
+      <div id="news-results" hidden>
+        <div class="news-summary-box" id="news-summary-box" hidden>
+          <h3>News Summary</h3>
+          <div id="news-summary-content" class="summary-content"></div>
+          <p id="news-summary-meta" class="summary-meta"></p>
+        </div>
+        <h3 id="news-list-heading">Press releases</h3>
+        <ul id="news-list" class="news-list"></ul>
       </div>
     </section>
   </main>

@@ -73,7 +73,7 @@
 
   // ---- tabs ----
   function initTabs() {
-    const tabs = ["construction", "optimization", "summary"];
+    const tabs = ["construction", "optimization", "summary", "news"];
     function show(name) {
       for (const t of tabs) {
         const btn = $("tab-" + t + "-btn");
@@ -86,10 +86,12 @@
       }
       if (name === "optimization") refreshOptTab();
       if (name === "summary") refreshSummaryTab();
+      if (name === "news") refreshNewsTab();
     }
     $("tab-construction-btn").addEventListener("click", () => show("construction"));
     $("tab-optimization-btn").addEventListener("click", () => show("optimization"));
     $("tab-summary-btn").addEventListener("click", () => show("summary"));
+    $("tab-news-btn").addEventListener("click", () => show("news"));
   }
 
   // ---- Tab 1: construction ----
@@ -569,6 +571,200 @@
     });
   }
 
+  // ---- Tab 4: trading signals / news ----
+
+  // In-session cache of the last fetched press releases, so the Summarize
+  // button can reuse them without re-fetching. Shape: [{ symbol, name, title,
+  // datetime, url }, ...].
+  let newsArticles = [];
+
+  function initNews() {
+    $("news-btn").addEventListener("click", runNews);
+    $("news-summarize-btn").addEventListener("click", runNewsSummary);
+  }
+
+  // Enable/disable the fetch button based on whether a 15-stock portfolio is
+  // saved. Mirrors the pattern used by refreshOptTab.
+  function refreshNewsTab() {
+    const hint = $("news-disabled-hint");
+    const btn = $("news-btn");
+    const saved = S.getPortfolio() || [];
+    if (saved.length !== 15) {
+      hint.hidden = false;
+      hint.textContent = "No portfolio saved (need exactly 15 stocks). Go to the Portfolio Construction tab to screen and save one.";
+      btn.disabled = true;
+      $("news-summarize-btn").disabled = true;
+      return;
+    }
+    hint.hidden = true;
+    btn.disabled = false;
+    // Summarize is enabled only once articles have been fetched.
+    $("news-summarize-btn").disabled = newsArticles.length === 0;
+    if (newsArticles.length === 0) {
+      $("news-progress").textContent = "";
+    }
+  }
+
+  // Fetch press releases for every ticker in the saved portfolio, collect them
+  // into a flat list, and render it. Fetches run through the shared rate
+  // limiter (8 req/min on the free tier), so 15 tickers take ~2 minutes.
+  function runNews() {
+    const saved = S.getPortfolio() || [];
+    if (saved.length !== 15) return;
+    if (!state.apiKey) {
+      const k = $("api-key-input").value.trim();
+      if (k) { state.apiKey = k; S.setApiKey(k); }
+    }
+    if (!state.apiKey) {
+      $("news-progress").textContent = "Enter and save an API key first.";
+      return;
+    }
+    const btn = $("news-btn");
+    btn.disabled = true;
+    $("news-summarize-btn").disabled = true;
+    $("news-progress").textContent = "Fetching 0/15…";
+
+    const bySymbol = {};
+    for (const s of U.UNIVERSE) bySymbol[s.symbol] = s;
+    const metas = saved.map((sym) => bySymbol[sym] || { symbol: sym, name: "", exchange: null });
+
+    let done = 0;
+    const fetches = metas.map((meta) => {
+      return A.fetchPressReleases(meta.symbol, state.apiKey, meta.exchange, 10)
+        .then((items) => {
+          done++;
+          $("news-progress").textContent = "Fetching " + done + "/15 (" + meta.symbol + ")";
+          // Tag each article with its source ticker for display.
+          return items.map((it) => ({
+            symbol: meta.symbol,
+            name: meta.name,
+            title: it.title,
+            datetime: it.datetime,
+            url: it.url,
+          }));
+        })
+        .catch((err) => {
+          done++;
+          // A single ticker failing should not abort the whole fetch; record
+          // an empty result and keep going.
+          $("news-progress").textContent = "Fetching " + done + "/15 (" + meta.symbol + " — " + (err.message || "error") + ")";
+          return [];
+        });
+    });
+
+    Promise.all(fetches).then((perTicker) => {
+      // Flatten, newest-first within each ticker is already the API order;
+      // keep a stable ticker order, then by datetime descending overall.
+      const all = [];
+      for (const arr of perTicker) for (const a of arr) all.push(a);
+      all.sort((a, b) => (b.datetime || "").localeCompare(a.datetime || ""));
+      newsArticles = all;
+      renderNewsList(all);
+      $("news-summarize-btn").disabled = all.length === 0;
+      $("news-progress").textContent =
+        "Done. " + all.length + " press release" + (all.length === 1 ? "" : "s") + " across " + saved.length + " tickers.";
+    }).catch((err) => {
+      // Should not happen (per-ticker errors are swallowed above), but guard.
+      $("news-progress").textContent = "Error: " + (err.message || "unknown");
+    }).finally(() => {
+      btn.disabled = false;
+    });
+  }
+
+  // Render the collected articles as a list of links. Falls back to a web
+  // search URL when no link could be extracted from the press-release body.
+  function renderNewsList(articles) {
+    const box = $("news-results");
+    const list = $("news-list");
+    const heading = $("news-list-heading");
+    box.hidden = false;
+    list.innerHTML = "";
+    if (!articles || articles.length === 0) {
+      heading.textContent = "Press releases";
+      list.innerHTML = '<li class="news-empty">No press releases found for the saved portfolio.</li>';
+      return;
+    }
+    heading.textContent = "Press releases (" + articles.length + ")";
+    for (const a of articles) {
+      const li = document.createElement("li");
+      li.className = "news-item";
+      const href = a.url || ("https://www.google.com/search?q=" + encodeURIComponent(
+        (a.title || a.symbol) + " press release " + (a.datetime || "")
+      ));
+      const ticker = document.createElement("span");
+      ticker.className = "news-ticker";
+      ticker.textContent = a.symbol;
+      const link = document.createElement("a");
+      link.href = href;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.textContent = a.title || "(untitled)";
+      const meta = document.createElement("span");
+      meta.className = "news-meta";
+      const when = a.datetime ? new Date(a.datetime).toLocaleString() : "";
+      meta.textContent = (a.name || "") + (when ? " — " + when : "");
+      li.appendChild(ticker);
+      li.appendChild(link);
+      li.appendChild(meta);
+      list.appendChild(li);
+    }
+  }
+
+  // Send the collected article titles/dates/symbols to the LLM for a short
+  // summary of the news across the portfolio.
+  function runNewsSummary() {
+    if (newsArticles.length === 0) {
+      $("news-progress").textContent = "Fetch press releases first.";
+      return;
+    }
+    if (!state.openRouterKey) {
+      const k = $("openrouter-key-input").value.trim();
+      if (k) { state.openRouterKey = k; S.setOpenRouterKey(k); }
+    }
+    if (!state.openRouterKey) {
+      $("news-progress").textContent = "Enter and save an OpenRouter API key first.";
+      return;
+    }
+    const btn = $("news-summarize-btn");
+    btn.disabled = true;
+    $("news-progress").textContent = "Summarizing…";
+
+    const systemPrompt =
+      "You are a concise equity-news analyst. Summarize the press releases " +
+      "provided for a portfolio of stocks. Hard constraint: the summary MUST " +
+      "NOT exceed 200 words. Use plain prose (no headings, no bullet lists). " +
+      "Group themes across tickers where possible (e.g. earnings, guidance, " +
+      "M&A, regulatory). Mention specific tickers only when material. " +
+      "Do not invent facts; use only the titles and dates provided.";
+    const userPrompt =
+      "Summarize the following press releases (max 200 words). " +
+      "Each line: <TICKER> <datetime> <title>.\n\n" +
+      newsArticles.map((a) =>
+        a.symbol + " " + (a.datetime || "") + " " + (a.title || "")
+      ).join("\n");
+
+    const model = $("news-model-input").value.trim() || null;
+    Llm.chat(
+      [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      state.openRouterKey,
+      model
+    ).then((text) => {
+      $("news-summary-box").hidden = false;
+      $("news-summary-content").textContent = text;
+      const wordCount = text.split(/\s+/).filter(Boolean).length;
+      $("news-summary-meta").textContent =
+        (model || Llm.DEFAULT_MODEL) + " — " + wordCount + " words";
+      $("news-progress").textContent = "";
+    }).catch((err) => {
+      $("news-progress").textContent = "Error: " + (err.message || "unknown");
+    }).finally(() => {
+      btn.disabled = false;
+    });
+  }
+
   // ---- boot ----
   function init() {
     initSettings();
@@ -576,6 +772,7 @@
     initConstruction();
     initOptimization();
     initSummary();
+    initNews();
   }
 
   document.addEventListener("DOMContentLoaded", init);

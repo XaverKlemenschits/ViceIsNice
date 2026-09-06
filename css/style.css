@@ -260,6 +260,57 @@ tr.selected { background: rgba(217, 164, 65, 0.08); }
 }
 .summary-meta { margin: 10px 0 0; color: var(--muted); font-size: 11px; }
 
+/* Trading Signals / news */
+.news-summary-box {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  padding: 14px 16px;
+  border-radius: 4px;
+  margin: 0 0 18px;
+}
+.news-summary-box h3 { margin: 0 0 8px; font-size: 15px; }
+#news-list-heading { margin: 0 0 8px; font-size: 15px; }
+.news-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.news-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  flex-wrap: wrap;
+}
+.news-ticker {
+  flex: 0 0 auto;
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--accent);
+  background: rgba(217, 164, 65, 0.12);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.news-item a {
+  flex: 1 1 320px;
+  text-decoration: none;
+}
+.news-item a:hover { text-decoration: underline; }
+.news-meta {
+  flex: 1 1 200px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+}
+.news-empty { color: var(--muted); padding: 14px; text-align: center; }
+
 @media (max-width: 720px) {
   .saved-list { columns: 1; }
   .opt-layout { flex-direction: column; }

@@ -6,10 +6,21 @@ const path = require("path");
 const BASE = path.join(__dirname, "js");
 
 const globalObj = {};
-function load(file) {
+function load(file, stubs) {
   let code = fs.readFileSync(path.join(BASE, file), "utf8");
   // Replace the IIFE's `window` argument with our globalObj.
   code = code.replace(/\}\)\(window\);/, "})(globalObj);");
+  // Inject stubs as local variables so bare references inside the eval'd
+  // code resolve to them instead of Node globals. Used to stub `fetch`
+  // and `setTimeout` for api.js tests.
+  if (stubs) {
+    const names = Object.keys(stubs);
+    const vals = names.map((n) => stubs[n]);
+    // eslint-disable-next-line no-new-func
+    const fn = new Function("globalObj", ...names, code);
+    fn(globalObj, ...vals);
+    return;
+  }
   // eslint-disable-next-line no-eval
   eval(code);
 }
@@ -188,6 +199,114 @@ for (let i = 0; i < 220; i++) overbought.push(100 * Math.pow(1.005, i));
 const obRes = Scr.screenStock({symbol:"OB", name:"OB", sector:"Oil"}, overbought.map((c,i)=>({datetime:"d"+i, open:c, high:c, low:c, close:c, volume:2e6})));
 assert("screen overbought: rsi fail", !obRes.passes.rsi, "rsi=" + obRes.rsi);
 
-console.log("\n== summary ==");
-console.log(pass + " passed, " + fail + " failed");
-process.exit(fail > 0 ? 1 : 0);
+// ---------- api: press releases ----------
+console.log("\n== api: press releases ==");
+
+// A synchronous thenable: `.then` calls the callbacks immediately, so the
+// whole Promise chain in getJson/fetchPressReleases resolves within the same
+// tick. This keeps the synchronous test harness working without async/await.
+function syncThenable(value) {
+  return {
+    then: function (ok, err) {
+      try { return syncThenable(ok ? ok(value) : value); }
+      catch (e) { if (err) err(e); throw e; }
+    },
+  };
+}
+
+// Build a fake fetch that returns a canned JSON response. The response is the
+// Twelve Data /press_releases shape: { press_releases: [...], status: "ok" }.
+function makeFakeFetch(responseObj) {
+  return function (url) {
+    return syncThenable({
+      ok: true,
+      status: 200,
+      json: function () { return syncThenable(responseObj); },
+    });
+  };
+}
+
+// Immediate setTimeout so the RateLimiter dispatches without delay.
+function instantSetTimeout(fn) { fn(); }
+
+load("api.js", { fetch: makeFakeFetch({
+  status: "ok",
+  press_releases: [
+    {
+      id: "pr-1",
+      datetime: "2024-05-01 09:00",
+      title: "Acme reports record Q1 earnings",
+      body: '<p>See full release <a href="https://example.com/pr/1">here</a>.</p>',
+      language: "en",
+    },
+    {
+      id: "pr-2",
+      datetime: "2024-04-15 13:30",
+      title: "Acme announces dividend",
+      body: "<p>No link in this one.</p>",
+      language: "en",
+    },
+  ],
+}), setTimeout: instantSetTimeout });
+
+const Api = globalObj.VINApi;
+
+// extractFirstHref: pure function, no fetch needed.
+assert("extractFirstHref: finds first link",
+  Api.extractFirstHref('<a href="https://a.example/x">a</a> and <a href="https://b.example/y">b</a>') === "https://a.example/x");
+assert("extractFirstHref: no link -> null",
+  Api.extractFirstHref("<p>no links here</p>") === null);
+assert("extractFirstHref: empty/null -> null",
+  Api.extractFirstHref("") === null && Api.extractFirstHref(null) === null);
+assert("extractFirstHref: single quotes",
+  Api.extractFirstHref("<a href='https://c.example/z'>c</a>") === null,
+  "regex only matches double-quoted href");
+
+// fetchPressReleases: maps the API response into the normalized shape and
+// extracts the first href from each body. These assertions run after the
+// promise chain resolves (the RateLimiter uses real Promises, so resolution
+// happens on the microtask queue, not synchronously).
+Api.fetchPressReleases("ACME", "demo-key", null, 10).then(function (items) {
+  assert("fetchPressReleases: returns array", Array.isArray(items));
+  assert("fetchPressReleases: length 2", items.length === 2, "len=" + items.length);
+  assert("fetchPressReleases: id preserved", items[0].id === "pr-1");
+  assert("fetchPressReleases: title preserved", items[0].title === "Acme reports record Q1 earnings");
+  assert("fetchPressReleases: datetime preserved", items[0].datetime === "2024-05-01 09:00");
+  assert("fetchPressReleases: url extracted from body", items[0].url === "https://example.com/pr/1");
+  assert("fetchPressReleases: url null when no href", items[1].url === null);
+  assert("fetchPressReleases: body preserved",
+    typeof items[0].body === "string" && items[0].body.indexOf("href") !== -1);
+}).catch(function (e) {
+  assert("fetchPressReleases: no throw", false, e && e.message);
+});
+
+// fetchPressReleases: rejects when no API key.
+Api.fetchPressReleases("ACME", "", null, 10).then(function () {
+  assert("fetchPressReleases: rejects without key", false, "resolved without key");
+}).catch(function (e) {
+  assert("fetchPressReleases: rejects without key",
+    e instanceof Error && /No API key/.test(e.message), e && e.message);
+});
+
+// fetchPressReleases: propagates API error status.
+load("api.js", { fetch: makeFakeFetch({ status: "error", message: "bad symbol" }), setTimeout: instantSetTimeout });
+const Api2 = globalObj.VINApi;
+Api2.fetchPressReleases("BAD", "demo-key", null, 10).then(function () {
+  assert("fetchPressReleases: rejects on API error", false, "resolved on error");
+}).catch(function (e) {
+  assert("fetchPressReleases: rejects on API error",
+    e instanceof Error && /bad symbol/.test(e.message), e && e.message);
+});
+
+// The async assertions above run on the microtask queue (the RateLimiter
+// chains several Promise.resolve().then() hops). Flush enough ticks to let
+// them all settle before printing the summary and exiting.
+function flushTicks(n, done) {
+  if (n <= 0) { done(); return; }
+  Promise.resolve().then(function () { flushTicks(n - 1, done); });
+}
+flushTicks(20, function () {
+  console.log("\n== summary ==");
+  console.log(pass + " passed, " + fail + " failed");
+  process.exit(fail > 0 ? 1 : 0);
+});

@@ -136,8 +136,47 @@
     });
   }
 
+  // Fetch press releases for a symbol via Twelve Data's /press_releases endpoint.
+  // Docs: https://twelvedata.com/docs#press-releases (Basic plan, 1 credit/request).
+  // Returns an array of { id, datetime, title, body, language, url } where `url`
+  // is the first href extracted from the HTML `body`, or null if none is found.
+  // `exchange` (optional) disambiguates international listings, matching the
+  // convention used by fetchTimeSeries. `outputsize` defaults to 10 (the API
+  // max per page). Throws on API error.
+  function fetchPressReleases(symbol, apiKey, exchange, outputsize) {
+    outputsize = outputsize || 10;
+    if (!apiKey) return Promise.reject(new Error("No API key provided."));
+    return getJson("/press_releases", {
+      symbol: symbol,
+      apikey: apiKey,
+      exchange: exchange,
+      outputsize: outputsize,
+    }).then((data) => {
+      if (!data || data.status === "error") {
+        throw new Error((data && data.message) || "press_releases error");
+      }
+      const items = (data && data.press_releases) || [];
+      return items.map((it) => ({
+        id: it.id,
+        datetime: it.datetime,
+        title: it.title,
+        body: it.body,
+        language: it.language,
+        url: extractFirstHref(it.body),
+      }));
+    });
+  }
+
+  // Extract the first href value from an HTML string. Returns null if none.
+  // Used to pull a source link out of the press-release `body` field.
+  function extractFirstHref(html) {
+    if (!html || typeof html !== "string") return null;
+    const m = html.match(/href\s*=\s*"([^"]+)"/i);
+    return m ? m[1] : null;
+  }
+
   global.VINApi = {
     BASE, DEFAULT_RPM, setRpm,
-    testApiKey, fetchTimeSeries,
+    testApiKey, fetchTimeSeries, fetchPressReleases, extractFirstHref,
   };
 })(window);
