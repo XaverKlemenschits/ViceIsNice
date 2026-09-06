@@ -349,13 +349,16 @@
   }
 
   // Refresh the summary tab when shown: enable/disable the generate button
-  // based on what data is available.
+  // based on what data is available. The summary can be generated from any
+  // combination of: live screening results, a saved portfolio, and saved
+  // optimization weights.
   function refreshSummaryTab() {
     const btn = $("summary-btn");
-    const hasScreen = state.screenResults && state.screenResults.length > 0;
-    btn.disabled = !hasScreen;
-    if (!hasScreen) {
-      $("summary-progress").textContent = "Run the portfolio construction screen first.";
+    const hasData = hasSummaryData();
+    btn.disabled = !hasData;
+    if (!hasData) {
+      $("summary-progress").textContent =
+        "Screen the universe, save a portfolio, or optimize first.";
     } else if (!state.openRouterKey) {
       $("summary-progress").textContent = "Enter and save an OpenRouter API key to generate.";
     } else {
@@ -363,37 +366,59 @@
     }
   }
 
-  // Build the data payload sent to the LLM. Includes screening results and,
-  // if available, the optimization weights/stats.
+  // True if there is any data to summarize: live screening results, a saved
+  // portfolio, or saved optimization weights.
+  function hasSummaryData() {
+    const hasScreen = state.screenResults && state.screenResults.length > 0;
+    const savedPortfolio = S.getPortfolio() || [];
+    const hasPortfolio = savedPortfolio.length > 0;
+    const savedOpt = S.getOptimization();
+    const hasWeights = savedOpt && savedOpt.weights && savedOpt.weights.length > 0;
+    return hasScreen || hasPortfolio || hasWeights;
+  }
+
+  // Build the data payload sent to the LLM. Includes whatever is available:
+  // live screening results, the saved portfolio, and saved optimization
+  // weights/stats. Falls back to persisted data when the in-session state is
+  // empty (e.g. after a page reload).
   function buildSummaryPayload() {
     const payload = { stage: "construction" };
+    const bySymbol = {};
+    for (const s of U.UNIVERSE) bySymbol[s.symbol] = s;
 
-    // Screening results.
+    // Screening results (live, if a screen was run this session).
     const results = state.screenResults || [];
-    const eligible = results.filter((r) => r.eligible);
-    const ineligible = results.filter((r) => !r.eligible);
-    payload.screening = {
-      universeSize: results.length,
-      eligibleCount: eligible.length,
-      ineligibleCount: ineligible.length,
-      eligible: eligible.map((r) => ({
-        symbol: r.symbol, name: r.name, sector: r.sector,
-        rsi: r.rsi, ma50: r.ma50, ma200: r.ma200,
-        vol30: r.vol30, avgVol30: r.avgVol30,
-      })),
-    };
-
-    // Saved portfolio (the 15 selected stocks).
-    const saved = S.getPortfolio() || [];
-    if (saved.length > 0) {
-      payload.savedPortfolio = saved;
+    if (results.length > 0) {
+      const eligible = results.filter((r) => r.eligible);
+      const ineligible = results.filter((r) => !r.eligible);
+      payload.screening = {
+        universeSize: results.length,
+        eligibleCount: eligible.length,
+        ineligibleCount: ineligible.length,
+        eligible: eligible.map((r) => ({
+          symbol: r.symbol, name: r.name, sector: r.sector,
+          rsi: r.rsi, ma50: r.ma50, ma200: r.ma200,
+          vol30: r.vol30, avgVol30: r.avgVol30,
+        })),
+      };
     }
 
-    // Optimization results, if computed.
+    // Saved portfolio (the 15 selected stocks), with names/sectors resolved
+    // from the universe.
+    const saved = S.getPortfolio() || [];
+    if (saved.length > 0) {
+      payload.savedPortfolio = saved.map((sym) => {
+        const m = bySymbol[sym] || {};
+        return { symbol: sym, name: m.name || "", sector: m.sector || "" };
+      });
+    }
+
+    // Optimization results. Prefer the in-session optData (richer: has full
+    // metas); fall back to the persisted optimization object.
+    let opt = null;
     if (state.optData) {
-      payload.stage = "construction+optimization";
       const { weights, stats, metas, method } = state.optData;
-      payload.optimization = {
+      opt = {
         method: method,
         expectedReturn: stats.ret,
         volatility: stats.vol,
@@ -404,14 +429,37 @@
           weight: weights[i],
         })).filter((h) => h.weight > 1e-6),
       };
+    } else {
+      const savedOpt = S.getOptimization();
+      if (savedOpt && savedOpt.weights && savedOpt.weights.length > 0) {
+        opt = {
+          method: savedOpt.method,
+          expectedReturn: savedOpt.stats && savedOpt.stats.ret,
+          volatility: savedOpt.stats && savedOpt.stats.vol,
+          sharpe: savedOpt.stats && savedOpt.stats.sharpe,
+          riskFreeRate: null,
+          holdings: (savedOpt.symbols || []).map((sym, i) => {
+            const m = bySymbol[sym] || {};
+            return {
+              symbol: sym, name: m.name || "", sector: m.sector || "",
+              weight: savedOpt.weights[i],
+            };
+          }).filter((h) => h.weight > 1e-6),
+        };
+      }
+    }
+    if (opt) {
+      payload.stage = payload.savedPortfolio || payload.screening ? "construction+optimization" : "optimization";
+      payload.optimization = opt;
     }
 
     return payload;
   }
 
   function runSummary() {
-    if (!state.screenResults || state.screenResults.length === 0) {
-      $("summary-progress").textContent = "Run the portfolio construction screen first.";
+    if (!hasSummaryData()) {
+      $("summary-progress").textContent =
+        "Screen the universe, save a portfolio, or optimize first.";
       return;
     }
     if (!state.openRouterKey) {
@@ -432,9 +480,10 @@
       "portfolio construction and (if provided) optimization results. " +
       "Hard constraint: the summary MUST NOT exceed 200 words. " +
       "Use plain prose (no headings, no bullet lists). " +
-      "Cover: how many stocks passed screening, notable eligible names/sectors, " +
-      "and — if optimization data is present — the expected return, volatility, " +
-      "Sharpe ratio, and the largest holdings by weight. " +
+      "Cover: how many stocks passed screening (if screening data is present), " +
+      "the saved portfolio composition (if present), and — if optimization data " +
+      "is present — the expected return, volatility, Sharpe ratio, and the " +
+      "largest holdings by weight. " +
       "Do not invent numbers; use only the data provided.";
     const userPrompt =
       "Summarize the following portfolio results as an executive summary (max 200 words):\n\n" +
