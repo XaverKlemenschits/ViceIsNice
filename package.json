@@ -1,0 +1,15 @@
+{
+  "name": "vice-is-nice",
+  "version": "1.0.0",
+  "description": "Vice Is Nice — vanilla-JS SPA for constructing and Markowitz-optimizing a 15-stock portfolio from a hard-coded universe, using the Twelve Data API.",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "dev": "serve . -l 5173",
+    "start": "serve . -l 5173",
+    "test": "node test.js"
+  },
+  "devDependencies": {
+    "serve": "^14.2.4"
+  }
+}
