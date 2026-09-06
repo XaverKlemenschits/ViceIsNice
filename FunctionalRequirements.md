@@ -1,0 +1,9 @@
+### Vice is Nice Investment: Functional Requirements
+
+With more an more investors looking to clean, morally sound, and ecologically friendly investment opportunities, they are limiting themselves from investing into certain companies, not based on their financial performance, but other factors. This may lead to potential undervaluation or lack of investment into what may be considered morally questionable undertakings, creating an investment opportunity.
+ 
+Therefore, the strategy will be to invest in morally controversial sectors, such as defence, tobacco, alcohol, gambling, oil, and certain agrifood or petrochemical companies, based on the hypothesis that recurring scandals and backlash are financially not relevant in the long-term, but lead investors to refuse these opportunities.
+
+In order to ensure liquidity and good data coverage, the portfolio will be limited to companies listed on the New York Stock Exchange (NYSE), London Stock Exchange (LSE), and Euronext. Stocks will be selected mostly on technical signals, such as such as not being overbought (RSI <70), upward momentum (50 day MA > 200 day MA), low volatility (30 day σ < 20%), and high liquidity (30 day volume > 1M shares). Possible examples of companies within the chosen equity universe include:  Lockheed Martin (LMT), Thales (HO.PA), Philip Morris (PM),  British American Tobacco (BTI), Anheuser-Busch (BUD), Heineken (HEIA), MGM Resorts (MGM), Las Vegas Sands (LVS), Archer-Daniels-Midland Company (ADM), Danone (BN.PA), ExxonMobil (XOM), Shell (SHEL.L), and TotalEnergies (TTE.PA). These stocks do not necessarily represent the final stock selection, but are listed to give an example of companies fitting the sought criteria for investment.
+
+Financial data will be extracted from Twelve Data API and thus only stocks with good data coverage on this platform will be considered.
