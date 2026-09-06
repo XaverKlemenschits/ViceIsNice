@@ -197,16 +197,47 @@
     // Otherwise, render the saved weights (if any) so the user sees real data
     // instead of just a text hint.
     const cached = S.getOptimization();
-    if (cached && cached.weights && cached.stats) {
-      const bySymbol = {};
-      for (const s of U.UNIVERSE) bySymbol[s.symbol] = s;
-      const metas = (cached.symbols || []).map((sym) =>
-        bySymbol[sym] || { symbol: sym, name: "", sector: "" }
-      );
+    if (!cached || !cached.weights || !cached.stats) return;
+
+    const bySymbol = {};
+    for (const s of U.UNIVERSE) bySymbol[s.symbol] = s;
+    const metas = (cached.symbols || []).map((sym) =>
+      bySymbol[sym] || { symbol: sym, name: "", sector: "" }
+    );
+
+    // If the save includes mu/Sigma/frontier (newer saves), reconstruct a
+    // full optData so renderOptResults draws the complete table (with
+    // contribution columns) and the efficient frontier — identical to a
+    // fresh run.
+    if (cached.mu && cached.Sigma && cached.frontier) {
+      state.optData = {
+        metas: metas,
+        mu: cached.mu,
+        Sigma: cached.Sigma,
+        frontier: cached.frontier,
+        weights: cached.weights,
+        stats: cached.stats,
+        rf: cached.rf != null ? cached.rf : 0,
+        muMin: cached.muMin != null ? cached.muMin : Math.min.apply(null, cached.mu),
+        muMax: cached.muMax != null ? cached.muMax : Math.max.apply(null, cached.mu),
+        method: cached.method,
+      };
+      // Slider: position at the saved portfolio's return.
+      const slider = $("target-return-slider");
+      slider.disabled = false;
+      const frac = (cached.stats.ret - state.optData.muMin) /
+        (state.optData.muMax - state.optData.muMin || 1);
+      slider.value = String(Math.round(Math.max(0, Math.min(100, frac * 100))));
+      updateTargetLabel();
+      renderOptResults();
+      $("recompute-btn").disabled = false;
+      $("save-weights-btn").disabled = false;
+    } else {
+      // Older save without mu/Sigma: render the simple table and a canvas
+      // placeholder. Running "Fetch data & optimize" upgrades the save.
       $("opt-results").hidden = false;
       UI.renderWeightsTableSimple(cached.weights, metas);
       UI.renderStats(cached.stats);
-      // No mu/Sigma to redraw the frontier; clear the canvas.
       const canvas = $("frontier-canvas");
       const ctx = canvas.getContext("2d");
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -214,10 +245,10 @@
       ctx.font = "13px sans-serif";
       ctx.fillText("Efficient frontier unavailable for saved weights.", 60, canvas.height / 2);
       ctx.fillText("Click “Fetch data & optimize” to recompute.", 60, canvas.height / 2 + 20);
-      $("opt-progress").textContent = "Showing saved weights from " +
-        new Date(cached.ts).toLocaleString() +
-        ". Click “Fetch data & optimize” to refresh.";
     }
+    $("opt-progress").textContent = "Showing saved weights from " +
+      new Date(cached.ts).toLocaleString() +
+      ". Click “Fetch data & optimize” to refresh.";
   }
 
   function initOptimization() {
@@ -357,10 +388,14 @@
 
   function saveWeights() {
     if (!state.optData) return;
-    const { weights, stats, metas, method } = state.optData;
+    const { weights, stats, metas, method, mu, Sigma, frontier, rf, muMin, muMax } = state.optData;
     S.setOptimization({
       symbols: metas.map((m) => m.symbol),
       weights, stats, method, ts: Date.now(),
+      // Persist mu/Sigma/frontier so the Optimization tab can fully
+      // re-render (weights table with contribution columns + efficient
+      // frontier) from saved data alone, without re-fetching prices.
+      mu, Sigma, frontier, rf, muMin, muMax,
     });
     $("opt-progress").textContent = "Weights saved to browser.";
   }
