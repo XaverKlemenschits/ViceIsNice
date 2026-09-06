@@ -9,7 +9,7 @@
   // Thresholds (from Implementation.md / FunctionalRequirements.md).
   const THRESH = {
     rsiMax: 70,            // not overbought
-    volMax: 0.20,          // 30d annualized vol < 20%
+    volMax: 0.30,          // 30d annualized vol < 30%
     avgVolMin: 1_000_000,  // 30d avg volume > 1M shares
     minBars: 200,          // need >= 200 valid bars for 200d SMA
   };

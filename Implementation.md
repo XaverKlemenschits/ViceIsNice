@@ -11,7 +11,7 @@ This will be a static web page, so all calculations need to be done in the front
 Stocks should be selected based on (from high to low priority):
 - Not overbought (RSI < 70)
 - Upward momentum (50 day MA > 200 day MA)
-- Low volatility (30 day σ < 20%)
+- Low volatility (30 day σ < 30%)
 - High liquidity (30 day volume > 1M shares)
 
 More details on the stocks which should be chosen are described in FuntionalRequirements.md

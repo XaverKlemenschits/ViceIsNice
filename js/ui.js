@@ -69,7 +69,7 @@
       tdCrit.innerHTML =
         chip(r.passes.rsi, "RSI < 70") +
         chip(r.passes.momentum, "50d MA > 200d MA") +
-        chip(r.passes.vol, "30d vol < 20%") +
+        chip(r.passes.vol, "30d vol < 30%") +
         chip(r.passes.liquidity, "30d avg vol > 1M");
       tr.appendChild(tdCrit);
 
