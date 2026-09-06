@@ -32,15 +32,19 @@
     try { localStorage.removeItem(key); } catch (e) {}
   }
 
-  // Convenience accessors for the three known keys.
+  // Convenience accessors for the known keys.
   const KEYS = {
     apiKey: "vin_apikey",
+    openRouterKey: "vin_openrouterkey",
     portfolio: "vin_portfolio",
     optimization: "vin_optimization",
   };
 
   function getApiKey() { return get(KEYS.apiKey, ""); }
   function setApiKey(k) { return set(KEYS.apiKey, k); }
+
+  function getOpenRouterKey() { return get(KEYS.openRouterKey, ""); }
+  function setOpenRouterKey(k) { return set(KEYS.openRouterKey, k); }
 
   function getPortfolio() { return get(KEYS.portfolio, []); }
   function setPortfolio(symbols) { return set(KEYS.portfolio, symbols); }
@@ -53,6 +57,7 @@
     KEYS,
     get, set, remove,
     getApiKey, setApiKey,
+    getOpenRouterKey, setOpenRouterKey,
     getPortfolio, setPortfolio,
     getOptimization, setOptimization,
   };

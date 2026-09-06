@@ -7,11 +7,13 @@
   const Scr = global.VINScreening;
   const M = global.VINMarkowitz;
   const A = global.VINApi;
+  const Llm = global.VINLlm;
   const UI = global.VINUI;
 
   // ---- state ----
   const state = {
     apiKey: "",
+    openRouterKey: "",
     screenResults: null,   // last screening results array
     selected: new Set(),   // selected symbols in tab 1
     savedPortfolio: [],     // persisted symbols
@@ -23,6 +25,11 @@
   function $(id) { return document.getElementById(id); }
   function setApiStatus(text, cls) {
     const el = $("api-status");
+    el.textContent = text;
+    el.className = "api-status" + (cls ? " " + cls : "");
+  }
+  function setOpenRouterStatus(text, cls) {
+    const el = $("openrouter-status");
     el.textContent = text;
     el.className = "api-status" + (cls ? " " + cls : "");
   }
@@ -50,11 +57,23 @@
         setApiStatus("Error: " + (err.message || "unknown"), "err");
       });
     });
+
+    // OpenRouter key (for the executive summary LLM).
+    state.openRouterKey = S.getOpenRouterKey() || "";
+    $("openrouter-key-input").value = state.openRouterKey;
+
+    $("openrouter-key-save").addEventListener("click", () => {
+      const k = $("openrouter-key-input").value.trim();
+      state.openRouterKey = k;
+      S.setOpenRouterKey(k);
+      setOpenRouterStatus("Saved.", "ok");
+      setTimeout(() => setOpenRouterStatus("", ""), 1500);
+    });
   }
 
   // ---- tabs ----
   function initTabs() {
-    const tabs = ["construction", "optimization"];
+    const tabs = ["construction", "optimization", "summary"];
     function show(name) {
       for (const t of tabs) {
         const btn = $("tab-" + t + "-btn");
@@ -66,9 +85,11 @@
         panel.hidden = !active;
       }
       if (name === "optimization") refreshOptTab();
+      if (name === "summary") refreshSummaryTab();
     }
     $("tab-construction-btn").addEventListener("click", () => show("construction"));
     $("tab-optimization-btn").addEventListener("click", () => show("optimization"));
+    $("tab-summary-btn").addEventListener("click", () => show("summary"));
   }
 
   // ---- Tab 1: construction ----
@@ -321,12 +342,133 @@
     $("opt-progress").textContent = "Weights saved to browser.";
   }
 
+  // ---- Tab 3: executive summary ----
+
+  function initSummary() {
+    $("summary-btn").addEventListener("click", runSummary);
+  }
+
+  // Refresh the summary tab when shown: enable/disable the generate button
+  // based on what data is available.
+  function refreshSummaryTab() {
+    const btn = $("summary-btn");
+    const hasScreen = state.screenResults && state.screenResults.length > 0;
+    btn.disabled = !hasScreen;
+    if (!hasScreen) {
+      $("summary-progress").textContent = "Run the portfolio construction screen first.";
+    } else if (!state.openRouterKey) {
+      $("summary-progress").textContent = "Enter and save an OpenRouter API key to generate.";
+    } else {
+      $("summary-progress").textContent = "";
+    }
+  }
+
+  // Build the data payload sent to the LLM. Includes screening results and,
+  // if available, the optimization weights/stats.
+  function buildSummaryPayload() {
+    const payload = { stage: "construction" };
+
+    // Screening results.
+    const results = state.screenResults || [];
+    const eligible = results.filter((r) => r.eligible);
+    const ineligible = results.filter((r) => !r.eligible);
+    payload.screening = {
+      universeSize: results.length,
+      eligibleCount: eligible.length,
+      ineligibleCount: ineligible.length,
+      eligible: eligible.map((r) => ({
+        symbol: r.symbol, name: r.name, sector: r.sector,
+        rsi: r.rsi, ma50: r.ma50, ma200: r.ma200,
+        vol30: r.vol30, avgVol30: r.avgVol30,
+      })),
+    };
+
+    // Saved portfolio (the 15 selected stocks).
+    const saved = S.getPortfolio() || [];
+    if (saved.length > 0) {
+      payload.savedPortfolio = saved;
+    }
+
+    // Optimization results, if computed.
+    if (state.optData) {
+      payload.stage = "construction+optimization";
+      const { weights, stats, metas, method } = state.optData;
+      payload.optimization = {
+        method: method,
+        expectedReturn: stats.ret,
+        volatility: stats.vol,
+        sharpe: stats.sharpe,
+        riskFreeRate: state.optData.rf,
+        holdings: metas.map((m, i) => ({
+          symbol: m.symbol, name: m.name, sector: m.sector,
+          weight: weights[i],
+        })).filter((h) => h.weight > 1e-6),
+      };
+    }
+
+    return payload;
+  }
+
+  function runSummary() {
+    if (!state.screenResults || state.screenResults.length === 0) {
+      $("summary-progress").textContent = "Run the portfolio construction screen first.";
+      return;
+    }
+    if (!state.openRouterKey) {
+      const k = $("openrouter-key-input").value.trim();
+      if (k) { state.openRouterKey = k; S.setOpenRouterKey(k); }
+    }
+    if (!state.openRouterKey) {
+      $("summary-progress").textContent = "Enter and save an OpenRouter API key first.";
+      return;
+    }
+    const btn = $("summary-btn");
+    btn.disabled = true;
+    $("summary-progress").textContent = "Generating…";
+
+    const payload = buildSummaryPayload();
+    const systemPrompt =
+      "You are a concise equity-research analyst. Write an executive summary of the " +
+      "portfolio construction and (if provided) optimization results. " +
+      "Hard constraint: the summary MUST NOT exceed 200 words. " +
+      "Use plain prose (no headings, no bullet lists). " +
+      "Cover: how many stocks passed screening, notable eligible names/sectors, " +
+      "and — if optimization data is present — the expected return, volatility, " +
+      "Sharpe ratio, and the largest holdings by weight. " +
+      "Do not invent numbers; use only the data provided.";
+    const userPrompt =
+      "Summarize the following portfolio results as an executive summary (max 200 words):\n\n" +
+      JSON.stringify(payload, null, 2);
+
+    const model = $("summary-model-input").value.trim() || null;
+    Llm.chat(
+      [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      state.openRouterKey,
+      model
+    ).then((text) => {
+      $("summary-box").hidden = false;
+      $("summary-content").textContent = text;
+      const wordCount = text.split(/\s+/).filter(Boolean).length;
+      $("summary-meta").textContent =
+        (model || Llm.DEFAULT_MODEL) + " — " + wordCount + " words";
+      $("summary-progress").textContent = "";
+    }).catch((err) => {
+      $("summary-progress").textContent = "Error: " + (err.message || "unknown");
+    }).finally(() => {
+      btn.disabled = false;
+    });
+  }
+
   // ---- boot ----
   function init() {
     initSettings();
     initTabs();
     initConstruction();
     initOptimization();
+    initSummary();
   }
 
   document.addEventListener("DOMContentLoaded", init);
